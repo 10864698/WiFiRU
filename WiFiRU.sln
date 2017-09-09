@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26730.12
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WiFiRU", "WiFiRU\WiFiRU.csproj", "{947CE760-C1EF-40C2-9EE8-48B3D38CD097}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM = Debug|ARM
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|ARM = Release|ARM
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|ARM.ActiveCfg = Debug|ARM
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|ARM.Build.0 = Debug|ARM
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|ARM.Deploy.0 = Debug|ARM
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|x64.ActiveCfg = Debug|x64
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|x64.Build.0 = Debug|x64
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|x64.Deploy.0 = Debug|x64
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|x86.ActiveCfg = Debug|x86
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|x86.Build.0 = Debug|x86
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Debug|x86.Deploy.0 = Debug|x86
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|ARM.ActiveCfg = Release|ARM
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|ARM.Build.0 = Release|ARM
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|ARM.Deploy.0 = Release|ARM
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|x64.ActiveCfg = Release|x64
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|x64.Build.0 = Release|x64
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|x64.Deploy.0 = Release|x64
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|x86.ActiveCfg = Release|x86
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|x86.Build.0 = Release|x86
+		{947CE760-C1EF-40C2-9EE8-48B3D38CD097}.Release|x86.Deploy.0 = Release|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FAB3F532-DC39-4A3D-9CDB-4F1FAF702B9B}
+	EndGlobalSection
+EndGlobal
