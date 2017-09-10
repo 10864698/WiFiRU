@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Data.Sqlite.Internal;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,6 +31,7 @@ namespace WiFiRU
         {
             this.InitializeComponent();
             this.Suspending += OnSuspending;
+            SqliteEngine.UseWinSqlite3(); //Configuring library to use SDK version of SQLite
         }
 
         /// <summary>

@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Threading.Tasks;
 using Windows.Devices.WiFi;
 using Windows.UI.Popups;
+using System.Text.RegularExpressions;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -19,7 +20,6 @@ namespace WiFiRU
     {
         private WifiAdapterScanner wifiScanner;
         private GpsScanner gpsScanner;
-        private string venueIdentification;
 
         public MainPage()
         {
@@ -42,44 +42,7 @@ namespace WiFiRU
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        private void VenueIdTextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (venueIdTextBox.Text == "")
-            {
-                VenueIdentification = "No Name Entered";
-            }
-            else
-            {
-                VenueIdentification = venueIdTextBox.Text;
-            }
-        }
-
         protected void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
-        public string VenueIdentification
-        {
-            get
-            {
-                if ((venueIdentification == "") | (venueIdentification == null))
-                    return "No ID generated";
-                else
-                    return venueIdentification;
-            }
-            set
-            {
-                if ((venueIdTextBox.Text == "") | (venueIdTextBox.Text == null))
-                {
-                    venueIdentification = "No ID generated";
-                    OnPropertyChanged("venueIdTextBox");
-                }
-                else
-                {
-                    venueIdentification = venueIdTextBox.Text;
-                    OnPropertyChanged("venueIdTextBox");
-                }
-            }
-
-        }
 
         private async void ScanButtonClick(object sender, RoutedEventArgs e)
         {
@@ -103,11 +66,13 @@ namespace WiFiRU
             await wifiScanner.ScanForNetworks();
             WiFiNetworkReport report = wifiScanner.WifiAdapter.NetworkReport;
 
-            gpsScanner = new GpsScanner();
-            gpsScanner.Latitude = -33.89736;
-            gpsScanner.Longitude = 151.1547;
-            gpsScanner.TimeStamp = DateTimeOffset.Now;
-            VenueIdentification = "Test";
+            gpsScanner = new GpsScanner
+            {
+                Latitude = -33.89736,
+                Longitude = 151.1547,
+                TimeStamp = DateTimeOffset.Now
+            };
+            var venueIdentification = GenerateVenueIdentification(gpsScanner.Latitude, gpsScanner.Longitude);
 
             foreach (var availableNetwork in report.AvailableNetworks)
             {
@@ -115,28 +80,27 @@ namespace WiFiRU
                 {
                     Bssid = availableNetwork.Bssid,
                     NetworkRssiInDecibelMilliwatts = availableNetwork.NetworkRssiInDecibelMilliwatts,
-                    Ssid = availableNetwork.Ssid,
-                    Uptime = availableNetwork.Uptime
+                    Ssid = availableNetwork.Ssid
                 };
 
-                AddWifiScanResultsToWifiScannerDatabase(wifiSignal, gpsScanner);
+                AddWifiScanResultsToWifiScannerDatabase(wifiSignal, gpsScanner, venueIdentification);
             }
         }
 
-        private void AddWifiScanResultsToWifiScannerDatabase(WifiSignal wifiSignal, GpsScanner gpsScanner)
+        private void AddWifiScanResultsToWifiScannerDatabase(WifiSignal wifiSignal, GpsScanner gpsScanner, string tableName)
         {
             using (SqliteConnection database = new SqliteConnection("Filename = WiFiScanner.db"))
             {
                 database.Open();
 
                 //create if table doesn't exist
-                CreateVenueTableInWifiScannerDatabaseIfNotExists(RemoveWhiteSpace(VenueIdentification));
+                CreateVenueTableInWifiScannerDatabaseIfNotExists(tableName);
 
                 //check if VenueName / Bssid / Ssid exists already
                 using (SqliteCommand sqlCheckExistingWifiSignalCommand = new SqliteCommand())
                 {
                     sqlCheckExistingWifiSignalCommand.Connection = database;
-                    sqlCheckExistingWifiSignalCommand.CommandText = "SELECT count(*) FROM " + RemoveWhiteSpace(VenueIdentification) + " " +
+                    sqlCheckExistingWifiSignalCommand.CommandText = "SELECT count(*) FROM " + tableName + " " +
                         "WHERE Bssid = @Bssid " +
                         "AND Ssid = @Ssid";
                     sqlCheckExistingWifiSignalCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
@@ -147,12 +111,11 @@ namespace WiFiRU
                         using (SqliteCommand insertCommand = new SqliteCommand())
                         {
                             insertCommand.Connection = database;
-                            insertCommand.CommandText = "INSERT INTO " + RemoveWhiteSpace(VenueIdentification) + " " +
+                            insertCommand.CommandText = "INSERT INTO " + tableName + " " +
                                 "(" +
                                 "Bssid, " +
                                 "NetworkRssiInDecibelMilliwatts, " +
                                 "Ssid, " +
-                                "Uptime, " +
                                 "TimeStamp" +
                                 ")" +
                                 "VALUES " +
@@ -160,13 +123,11 @@ namespace WiFiRU
                                 "@Bssid," +
                                 "@NetworkRssiInDecibelMilliwatts," +
                                 "@Ssid," +
-                                "@Uptime," +
                                 "@TimeStamp" +
                                 ")";
                             insertCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
                             insertCommand.Parameters.AddWithValue("@NetworkRssiInDecibelMilliwatts", wifiSignal.NetworkRssiInDecibelMilliwatts); //double REAL
                             insertCommand.Parameters.AddWithValue("@Ssid", wifiSignal.Ssid); //string TEXT
-                            insertCommand.Parameters.AddWithValue("@Uptime", wifiSignal.Uptime.Ticks); //long INTEGER
                             insertCommand.Parameters.AddWithValue("@TimeStamp", gpsScanner.TimeStamp.ToString("yyyy-MM-dd HH:mm:ss.fff")); //string TEXT
 
                             try
@@ -182,7 +143,8 @@ namespace WiFiRU
                     database.Close(); database.Dispose();
                 }
 
-                Output.ItemsSource = ReadWifiScannerDatabase;
+                VenueIdTextBox.Text = tableName;
+                OutputTextBlock.ItemsSource = ReadWifiScannerDatabase(tableName);
             }
         }
 
@@ -199,11 +161,10 @@ namespace WiFiRU
                     throw new Exception("SQL database not opened.");
                 }
 
-                String sqlCreateTableCommand = "CREATE TABLE IF NOT EXISTS " + RemoveWhiteSpace(tableName) + " (" +
+                String sqlCreateTableCommand = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
                     "Bssid TEXT," +
                     "NetworkRssiInDecibelMilliwatts REAL," +
                     "Ssid TEXT," +
-                    "Uptime INTEGER," +
                     "TimeStamp TEXT " +
                     ")";
 
@@ -214,74 +175,73 @@ namespace WiFiRU
                 }
                 catch (SqliteException e)
                 {
-                    throw new Exception("SQL table " + RemoveWhiteSpace(tableName) + " not created.");
+                    throw new Exception("SQL table " + tableName + " not created.");
                 }
                 database.Close(); database.Dispose();
             }
 
-            Output.ItemsSource = ReadWifiScannerDatabase;
+            VenueIdTextBox.Text = tableName;
+            OutputTextBlock.ItemsSource = ReadWifiScannerDatabase(tableName);
         }
 
-        private string RemoveWhiteSpace(string input)
+        private List<String> ReadWifiScannerDatabase(string tableName)
         {
-            int j = 0, inputlen = input.Length;
-            char[] newarr = new char[inputlen];
+            List<String> entries = new List<string>();
 
-            for (int i = 0; i < inputlen; ++i)
+            using (SqliteConnection database = new SqliteConnection("Filename = WiFiScanner.db"))
             {
-                char tmp = input[i];
+                database.Open();
 
-                if (!char.IsWhiteSpace(tmp))
+                SqliteCommand sqlSelectCommand = new SqliteCommand(
+                    "SELECT Ssid, Bssid, NetworkRssiInDecibelMilliwatts, TimeStamp " +
+                    "FROM " + tableName + " " +
+                    "ORDER BY NetworkRssiInDecibelMilliwatts DESC", database);
+                SqliteDataReader query;
+
+                try
                 {
-                    newarr[j] = tmp;
-                    ++j;
+                    query = sqlSelectCommand.ExecuteReader();
                 }
+                catch (SqliteException e)
+                {
+                    throw new Exception("SQL database no entries in table." + tableName);
+                    //return entries;
+                }
+
+                while (query.Read())
+                {
+                    entries.Add("[" + query.GetString(0) + "] "
+                        + " [MAC " + query.GetString(1) + "] "
+                        + query.GetString(2) + " dBm "
+                        + query.GetString(3));
+                }
+
+                database.Close(); database.Dispose();
             }
-            return new String(newarr, 0, j);
+            return entries;
         }
 
-        private List<String> ReadWifiScannerDatabase
+        private string GenerateVenueIdentification(double latitude, double longitude)
         {
-            get
+            var latitudeString = latitude.ToString();
+            var longitudeString = longitude.ToString();
+
+            if (latitude < 0)
             {
-                List<String> entries = new List<string>();
-
-                using (SqliteConnection database = new SqliteConnection("Filename = WiFiScanner.db"))
-                {
-                    database.Open();
-
-                    SqliteCommand sqlSelectCommand = new SqliteCommand(
-                        "SELECT Ssid, Bssid, NetworkRssiInDecibelMilliwatts, TimeStamp, Uptime " +
-                        "FROM " + RemoveWhiteSpace(VenueIdentification) + " " +
-                        "ORDER BY NetworkRssiInDecibelMilliwatts DESC, Uptime DESC", database);
-                    SqliteDataReader query;
-
-                    try
-                    {
-                        query = sqlSelectCommand.ExecuteReader();
-                    }
-                    catch (SqliteException e)
-                    {
-                        throw new Exception("SQL database no entries in table." + RemoveWhiteSpace(VenueIdentification));
-                        //return entries;
-                    }
-
-                    while (query.Read())
-                    {
-                        TimeSpan interval = TimeSpan.FromTicks(query.GetInt64(4));
-                        string uptime = interval.ToString("%d") + " day(s) " + interval.ToString(@"hh\:mm");
-
-                        entries.Add("[" + query.GetString(0) + "] "
-                            + " [MAC " + query.GetString(1) + "] "
-                            + query.GetString(2) + " dBm "
-                            + "Uptime:" + uptime + " "
-                            + query.GetFloat(3).ToString());
-                    }
-
-                    database.Close(); database.Dispose();
-                }
-                return entries;
+                latitudeString = "LAT" + latitudeString + "S";
             }
+            else { latitudeString = "LAT" + latitudeString + "N"; }
+            latitudeString = latitudeString.Replace('.', 'D');
+
+            if (longitude < 0)
+            {
+                longitudeString = "LON" + longitudeString + "W";
+            }
+            else { longitudeString = "LON" + longitudeString + "E"; }
+            longitudeString = longitudeString.Replace('.', 'D');
+
+            Regex rgx = new Regex("[^a-zA-Z0-9]");
+            return rgx.Replace((latitudeString + longitudeString), "");
         }
     }
 }

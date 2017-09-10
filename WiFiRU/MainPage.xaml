@@ -16,10 +16,10 @@
 
                 <Button Name="ButtonScan" Click="ScanButtonClick" >Scan For Networks</Button>
 
-                <TextBox Name="venueIdTextBox" Header="VenueID"  RelativePanel.Below="ButtonScan" Height="66" Width="352" TextChanged="VenueIdTextChanged" IsReadOnly="False" Margin="0" TextWrapping="Wrap" Text="{Binding VenueIdentification, Mode=TwoWay}"/>
+                <TextBox Name="VenueIdTextBox" Header="VenueID"  RelativePanel.Below="ButtonScan" Text="{Binding}"/>
 
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" RelativePanel.Below="venueIdTextBox" VerticalScrollBarVisibility="Visible"  VerticalScrollMode="Enabled" >
-                    <ListView Name="Output" >
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" RelativePanel.Below="VenueIdTextBox" VerticalScrollBarVisibility="Visible"  VerticalScrollMode="Enabled" >
+                    <ListView Name="OutputTextBlock" >
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <TextBlock TextWrapping="Wrap" Text="{Binding}"/>
