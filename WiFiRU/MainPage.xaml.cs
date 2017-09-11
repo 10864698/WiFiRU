@@ -177,7 +177,7 @@ namespace WiFiRU
                     gpsDataReaderStream = gpsDataReaderStream.Remove(0, gpsDataReaderStream.IndexOf("GPRMC")); // clear to frst RMC message
                     string gprmcMessage = gpsDataReaderStream.Substring(gpsDataReaderStream.IndexOf("GPRMC"), (gpsDataReaderStream.IndexOf("*") + 3) - gpsDataReaderStream.IndexOf("GPRMC"));
 
-                    // Validate checksum
+                    // Calculate checksum
                     int checksum = 0;
                     for (int i = 0; i < (gprmcMessage.Length -3); i++)
                     {
@@ -396,10 +396,10 @@ namespace WiFiRU
 
                 while (query.Read())
                 {
-                    entries.Add(query.GetString(0)
-                        + " [MAC " + query.GetString(1) + "] "
-                        + " [RSSI " + query.GetString(2) + " dBm] "
-                        + query.GetString(3));
+                    entries.Add("[MAC " + query.GetString(1) + "] "
+                        + "[RSSI " + query.GetString(2) + " dBm] "
+                        + query.GetString(3) + " "
+                        + query.GetString(0));
                 }
 
                 database.Close(); database.Dispose();
@@ -472,7 +472,7 @@ namespace WiFiRU
             }
 
             double latitude = (dd + mm / 60);
-            return latitude.ToString("F6") + coords.Substring(coords.Length - 1, 1);
+            return latitude.ToString("F4") + coords.Substring(coords.Length - 1, 1);
         }
 
         private string ParseLongitude(string coords)
@@ -530,7 +530,7 @@ namespace WiFiRU
             }
 
             double longitude = (ddd + mm / 60);
-            return longitude.ToString("F6") + coords.Substring(coords.Length - 1, 1);
+            return longitude.ToString("F4") + coords.Substring(coords.Length - 1, 1);
         }
     }
 }
