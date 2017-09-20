@@ -85,7 +85,7 @@ namespace WiFiRU
 
                     // Set the RcvdText field to invoke the TextChanged callback
                     // The callback launches an async Read task to wait for data
-                    ErrorMessageTextBox.Text = "Waiting for GPS data...";
+                    StatusTextBox.Text = "Waiting for GPS data...";
 
                     // Create cancellation token object to close I/O operations when closing the device
                     ReadCancellationTokenSource = new CancellationTokenSource();
@@ -94,12 +94,12 @@ namespace WiFiRU
                 }
                 catch (Exception ex)
                 {
-                    ErrorMessageTextBox.Text = ex.Message;
+                    StatusTextBox.Text = ex.Message;
                 }
             }
             catch (Exception ex)
             {
-                ErrorMessageTextBox.Text = ex.Message;
+                StatusTextBox.Text = ex.Message;
             }
         }
 
@@ -127,11 +127,11 @@ namespace WiFiRU
             }
             catch (TaskCanceledException ex)
             {
-                ErrorMessageTextBox.Text = ex.Message;
+                StatusTextBox.Text = ex.Message;
             }
             catch (Exception ex)
             {
-                ErrorMessageTextBox.Text = ex.Message;
+                StatusTextBox.Text = ex.Message;
             }
             finally
             {
@@ -179,31 +179,31 @@ namespace WiFiRU
 
                     // Calculate checksum
                     int checksum = 0;
-                    for (int i = 0; i < (gprmcMessage.Length -3); i++)
+                    for (int i = 0; i < (gprmcMessage.Length - 3); i++)
                     {
                         checksum ^= Convert.ToByte(gprmcMessage[i]);
                     }
                     string strChecksum = checksum.ToString("X2");
 
-                    string[] gprmcField = gprmcMessage.Split(',','*');
+                    string[] gprmcField = gprmcMessage.Split(',', '*');
 
                     gpsScanner.LocationStatus = gprmcField[2];
 
                     if (!(gprmcField[2] == "A"))
                     {
-                        ErrorMessageTextBox.Text = "No GPS fix";
+                        StatusTextBox.Text = "No GPS fix";
                     }
-                    if(!(strChecksum == gprmcField[gprmcField.Length - 1]))
+                    if (!(strChecksum == gprmcField[gprmcField.Length - 1]))
                     {
-                        ErrorMessageTextBox.Text = "Invalid checksum";
+                        StatusTextBox.Text = "Invalid checksum";
                     }
                     else
                     {
-                        gpsScanner.Latitude = gprmcField[3] + gprmcField[4];
-                        gpsScanner.Longitude = gprmcField[5] + gprmcField[6];
+                        gpsScanner.Latitude = ParseLatitude(gprmcField[3] + gprmcField[4]);
+                        gpsScanner.Longitude = ParseLongitude(gprmcField[5] + gprmcField[6]);
                         gpsScanner.DateTime = ParseDateTime(gprmcField[9], gprmcField[1]);
 
-                        ErrorMessageTextBox.Text = gprmcField[3] + gprmcField[4] + " " + gprmcField[5] + gprmcField[6] + " " + gprmcField[9] + " " + gprmcField[1];
+                        StatusTextBox.Text = gprmcField[3] + gprmcField[4] + " " + gprmcField[5] + gprmcField[6] + " " + gprmcField[9] + " " + gprmcField[1];
                     }
                 }
             }
@@ -255,8 +255,6 @@ namespace WiFiRU
             await wifiScanner.ScanForNetworks();
             WiFiNetworkReport report = wifiScanner.WifiAdapter.NetworkReport;
 
-            string venueIdentification = GenerateVenueIdentification(gpsScanner.Latitude, gpsScanner.Longitude);
-
             foreach (var availableNetwork in report.AvailableNetworks)
             {
                 WifiSignal wifiSignal = new WifiSignal()
@@ -266,7 +264,7 @@ namespace WiFiRU
                     Ssid = availableNetwork.Ssid
                 };
 
-                AddWifiScanResultsToWifiScannerDatabase(wifiSignal, gpsScanner, venueIdentification);
+                AddWifiScanResultsToWifiScannerDatabase(wifiSignal, gpsScanner, "venuedata");
             }
         }
 
@@ -279,53 +277,44 @@ namespace WiFiRU
                 //create if table doesn't exist
                 CreateVenueTableInWifiScannerDatabaseIfNotExists(tableName);
 
-                //check if VenueName / Bssid / Ssid exists already
-                using (SqliteCommand sqlCheckExistingWifiSignalCommand = new SqliteCommand())
+                using (SqliteCommand insertCommand = new SqliteCommand())
                 {
-                    sqlCheckExistingWifiSignalCommand.Connection = database;
-                    sqlCheckExistingWifiSignalCommand.CommandText = "SELECT count(*) FROM " + tableName + " " +
-                        "WHERE Bssid = @Bssid " +
-                        "AND Ssid = @Ssid";
-                    sqlCheckExistingWifiSignalCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
-                    sqlCheckExistingWifiSignalCommand.Parameters.AddWithValue("@Ssid", wifiSignal.Ssid); //string TEXT
-                    int count = Convert.ToInt32(sqlCheckExistingWifiSignalCommand.ExecuteScalar()); //check for existing record
-                    if (count == 0)
-                    {
-                        using (SqliteCommand insertCommand = new SqliteCommand())
-                        {
-                            insertCommand.Connection = database;
-                            insertCommand.CommandText = "INSERT INTO " + tableName + " " +
-                                "(" +
-                                "Bssid, " +
-                                "NetworkRssiInDecibelMilliwatts, " +
-                                "Ssid, " +
-                                "TimeStamp " +
-                                ") " +
-                                "VALUES " +
-                                "(" +
-                                "@Bssid, " +
-                                "@NetworkRssiInDecibelMilliwatts, " +
-                                "@Ssid, " +
-                                "@TimeStamp " +
-                                ")";
-                            insertCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
-                            insertCommand.Parameters.AddWithValue("@NetworkRssiInDecibelMilliwatts", wifiSignal.NetworkRssiInDecibelMilliwatts); //double REAL
-                            insertCommand.Parameters.AddWithValue("@Ssid", wifiSignal.Ssid); //string TEXT
-                            insertCommand.Parameters.AddWithValue("@TimeStamp", gpsScanner.DateTime); //string TEXT
+                    insertCommand.Connection = database;
+                    insertCommand.CommandText = "INSERT INTO " + tableName + " " +
+                        "(" +
+                        "Latitude, " +
+                        "Longitude, " +
+                        "Bssid, " +
+                        "NetworkRssiInDecibelMilliwatts, " +
+                        "Ssid, " +
+                        "TimeStamp " +
+                        ") " +
+                        "VALUES " +
+                        "(" +
+                        "@Latitude, " +
+                        "@Longitude, " +
+                        "@Bssid, " +
+                        "@NetworkRssiInDecibelMilliwatts, " +
+                        "@Ssid, " +
+                        "@TimeStamp " +
+                        ")";
+                    insertCommand.Parameters.AddWithValue("@Latitude", gpsScanner.Latitude); //double REAL
+                    insertCommand.Parameters.AddWithValue("@Longitude", gpsScanner.Longitude); //double REAL
+                    insertCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
+                    insertCommand.Parameters.AddWithValue("@NetworkRssiInDecibelMilliwatts", wifiSignal.NetworkRssiInDecibelMilliwatts); //double REAL
+                    insertCommand.Parameters.AddWithValue("@Ssid", wifiSignal.Ssid); //string TEXT
+                    insertCommand.Parameters.AddWithValue("@TimeStamp", gpsScanner.DateTime); //string TEXT
 
-                            try
-                            {
-                                insertCommand.ExecuteNonQuery();
-                            }
-                            catch (SqliteException ex)
-                            {
-                                ErrorMessageTextBox.Text = ex.Message;
-                                throw new Exception("SQL table INSERT not performed" + count.ToString());
-                            }
-                        }
+                    try
+                    {
+                        insertCommand.ExecuteNonQuery();
                     }
-                    database.Close(); database.Dispose();
+                    catch (SqliteException ex)
+                    {
+                        StatusTextBox.Text = ex.Message;
+                    }
                 }
+                database.Close(); database.Dispose();
 
                 VenueIdTextBox.Text = tableName;
                 OutputTextBlock.ItemsSource = ReadWifiScannerDatabase(tableName);
@@ -342,11 +331,13 @@ namespace WiFiRU
                 }
                 catch (SqliteException ex)
                 {
-                    ErrorMessageTextBox.Text = ex.Message;
+                    StatusTextBox.Text = ex.Message;
                     throw new Exception("SQL database not opened.");
                 }
 
                 String sqlCreateTableCommand = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
+                    "Latitude REAL, " +
+                    "Longitude REAL, " +
                     "Bssid TEXT, " +
                     "NetworkRssiInDecibelMilliwatts REAL, " +
                     "Ssid TEXT, " +
@@ -360,7 +351,7 @@ namespace WiFiRU
                 }
                 catch (SqliteException ex)
                 {
-                    ErrorMessageTextBox.Text = ex.Message;
+                    StatusTextBox.Text = ex.Message;
                     throw new Exception("SQL table " + tableName + " not created.");
                 }
                 database.Close(); database.Dispose();
@@ -379,7 +370,7 @@ namespace WiFiRU
                 database.Open();
 
                 SqliteCommand sqlSelectCommand = new SqliteCommand(
-                    "SELECT Ssid, Bssid, NetworkRssiInDecibelMilliwatts, TimeStamp " +
+                    "SELECT Ssid, Bssid, NetworkRssiInDecibelMilliwatts, TimeStamp, Latitude, Longitude " +
                     "FROM " + tableName + " " +
                     "ORDER BY NetworkRssiInDecibelMilliwatts DESC", database);
                 SqliteDataReader query;
@@ -390,7 +381,7 @@ namespace WiFiRU
                 }
                 catch (SqliteException ex)
                 {
-                    ErrorMessageTextBox.Text = ex.Message;
+                    StatusTextBox.Text = ex.Message;
                     throw new Exception("SQL database no entries in table." + tableName);
                 }
 
@@ -399,7 +390,9 @@ namespace WiFiRU
                     entries.Add("[MAC " + query.GetString(1) + "] "
                         + "[RSSI " + query.GetString(2) + " dBm] "
                         + query.GetString(3) + " "
-                        + query.GetString(0));
+                        + query.GetString(0) + " "
+                        + query.GetDouble(4) + " "
+                        + query.GetDouble(5));
                 }
 
                 database.Close(); database.Dispose();
@@ -407,17 +400,7 @@ namespace WiFiRU
             return entries;
         }
 
-        private string GenerateVenueIdentification(string gprmcLatitude, string gprmcLongitude)
-        {
-            gprmcLatitude = ParseLatitude(gprmcLatitude);
-            gprmcLongitude = ParseLongitude(gprmcLongitude);
-
-            Regex rgx = new Regex("[^a-zA-Z0-9]");
-
-            return "LL" + rgx.Replace(gprmcLatitude + gprmcLongitude, "");
-        }
-
-        private string ParseLatitude(string coords)
+        private double ParseLatitude(string coords)
         {
             // Latitude: DDMM.mmmm - e.g. 5321.5802 N
             if (!coords.EndsWith("N", StringComparison.OrdinalIgnoreCase) && !coords.EndsWith("S", StringComparison.OrdinalIgnoreCase))
@@ -472,10 +455,18 @@ namespace WiFiRU
             }
 
             double latitude = (dd + mm / 60);
-            return latitude.ToString("F4") + coords.Substring(coords.Length - 1, 1);
+
+            if (coords.EndsWith("N", StringComparison.OrdinalIgnoreCase))
+            {
+                return latitude;
+            }
+            else
+            {
+                return -latitude;
+            }
         }
 
-        private string ParseLongitude(string coords)
+        private double ParseLongitude(string coords)
         {
             // Longitude: DDDMM.mmmm - e.g. 00630.3372 W
             if (!coords.EndsWith("W", StringComparison.OrdinalIgnoreCase) && !coords.EndsWith("E", StringComparison.OrdinalIgnoreCase))
@@ -530,7 +521,15 @@ namespace WiFiRU
             }
 
             double longitude = (ddd + mm / 60);
-            return longitude.ToString("F4") + coords.Substring(coords.Length - 1, 1);
+
+            if (coords.EndsWith("E", StringComparison.OrdinalIgnoreCase))
+            {
+                return longitude;
+            }
+            else
+            {
+                return -longitude;
+            }
         }
     }
 }

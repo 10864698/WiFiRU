@@ -17,7 +17,7 @@
                 <Button Name="ButtonScan" Click="ScanButtonClick" >Scan For Networks</Button>
 
                 <TextBox Name="VenueIdTextBox" Header="VenueID"  RelativePanel.Below="ButtonScan" Text="{Binding}"/>
-                <TextBox Name="ErrorMessageTextBox" Header="ErrorMessage"  RelativePanel.RightOf ="ButtonScan" Text="{Binding}"/>
+                <TextBox Name="StatusTextBox" Header="Status"  RelativePanel.RightOf ="ButtonScan" Text="{Binding}"/>
 
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" RelativePanel.Below="VenueIdTextBox" VerticalScrollBarVisibility="Visible"  VerticalScrollMode="Enabled" >
                     <ListView Name="OutputTextBlock" >
