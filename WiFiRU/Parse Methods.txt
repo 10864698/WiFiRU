@@ -1,0 +1,136 @@
+﻿ private double ParseLatitude(string coordinates)
+        {
+            // Latitude: DDMM.mmmm - e.g. 5321.5802 N
+            if (!coordinates.EndsWith("N", StringComparison.OrdinalIgnoreCase) && !coordinates.EndsWith("S", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Latitude coordinate not found.");
+            }
+
+            if (coordinates.Length < 4)
+            {
+                throw new ArgumentException("Invalid latitude format.");
+            }
+
+            int dd = 0;
+            try
+            {
+                dd = int.Parse(coordinates.Substring(0, 2));
+                if (dd > 90)
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+            }
+            catch when (dd > 90)
+            {
+                throw new ArgumentOutOfRangeException("Degrees in latitude cannot exceed 90.");
+            }
+            catch
+            {
+                throw new ArgumentException("Invalid degrees format in latitude.");
+            }
+
+            double mm = 0.0D;
+            try
+            {
+                string minutes = Regex.Match(coordinates.Substring(2), @"(\d+).(\d+)").Value;
+                mm = double.Parse(minutes);
+                if ((dd == 90 && mm > 0.0D) || mm >= 60.0D)
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+            }
+            catch when (dd == 90 && mm > 0.0D)
+            {
+                throw new ArgumentOutOfRangeException("Degrees in latitude cannot exceed 90.");
+            }
+            catch when (mm >= 60.0D)
+            {
+                throw new ArgumentOutOfRangeException("Minutes in latitude cannot exceed 60.");
+            }
+            catch
+            {
+                throw new ArgumentException("Invalid minutes format in latitude.");
+            }
+
+            double latitude = (dd + mm / 60);
+
+            if (coordinates.EndsWith("N", StringComparison.OrdinalIgnoreCase))
+            {
+                return latitude;
+            }
+            else
+            {
+                return -latitude;
+            }
+        }
+
+        private double ParseLongitude(string coordinates)
+        {
+            // Longitude: DDDMM.mmmm - e.g. 00630.3372 W
+            if (!coordinates.EndsWith("W", StringComparison.OrdinalIgnoreCase) && !coordinates.EndsWith("E", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Longitude coordinate not found.");
+            }
+
+            if (coordinates.Length < 5)
+            {
+                throw new ArgumentException("Invalid longitude format.");
+            }
+
+            int ddd = 0;
+            try
+            {
+                ddd = int.Parse(coordinates.Substring(0, 3));
+                if (ddd > 180)
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+            }
+            catch when (ddd > 180)
+            {
+                throw new ArgumentOutOfRangeException("Degrees in longitude cannot exceed 180.");
+            }
+            catch
+            {
+                throw new ArgumentException("Invalid degrees format in longitude.");
+            }
+
+            double mm = 0.0D;
+            try
+            {
+                string minutes = Regex.Match(coordinates.Substring(3), @"(\d+).(\d+)").Value;
+                mm = double.Parse(minutes);
+                if ((ddd == 180 && mm > 0.0D) || mm >= 60.0D)
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+            }
+            catch when (ddd == 180 && mm > 0.0D)
+            {
+                throw new ArgumentOutOfRangeException("Degrees in longitude cannot exceed 180.");
+            }
+            catch when (mm >= 60.0D)
+            {
+                throw new ArgumentOutOfRangeException("Minutes in longitude should be less than 60.");
+            }
+            catch
+            {
+                throw new ArgumentException("Invalid minutes format in longitude.");
+            }
+
+            double longitude = (ddd + mm / 60);
+
+            if (coordinates.EndsWith("E", StringComparison.OrdinalIgnoreCase))
+            {
+                return longitude;
+            }
+            else
+            {
+                return -longitude;
+            }
+        }
+
+		private string ParseDateTime(string date, string time)
+        {
+            return DateTime.ParseExact(date + time, "ddMMyyHHmmss.fff", CultureInfo.InvariantCulture).ToString("u");
+        }

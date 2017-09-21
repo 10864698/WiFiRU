@@ -7,13 +7,11 @@ using System.ComponentModel;
 using System.Threading.Tasks;
 using Windows.Devices.WiFi;
 using Windows.UI.Popups;
-using System.Text.RegularExpressions;
 using Windows.Devices.SerialCommunication;
 using Windows.Storage.Streams;
 using System.Collections.ObjectModel;
 using System.Threading;
 using Windows.Devices.Enumeration;
-using System.Globalization;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -26,6 +24,8 @@ namespace WiFiRU
     {
         private WifiAdapterScanner wifiScanner;
         private GpsScanner gpsScanner;
+        private static string databaseName = "WiFiScanner.db";
+        private static string tableName = "venueData";
 
         private SerialDevice serialPort = null;
         DataReader dataReaderObject = null;
@@ -144,7 +144,7 @@ namespace WiFiRU
         }
 
         /// <summary>
-        /// ReadAsync: Task that waits on data and reads asynchronously from the serial device InputStream
+        /// ReadAsync task that waits on data and reads asynchronously from the serial device InputStream
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
@@ -174,7 +174,9 @@ namespace WiFiRU
                 {
                     gpsDataReaderStream = dataReaderObject.ReadString(bytesRead);
 
-                    gpsDataReaderStream = gpsDataReaderStream.Remove(0, gpsDataReaderStream.IndexOf("GPRMC")); // clear to frst RMC message
+                    // clear to first RMC message
+                    gpsDataReaderStream = gpsDataReaderStream.Remove(0, gpsDataReaderStream.IndexOf("GPRMC"));
+                    // get the GPRMC string
                     string gprmcMessage = gpsDataReaderStream.Substring(gpsDataReaderStream.IndexOf("GPRMC"), (gpsDataReaderStream.IndexOf("*") + 3) - gpsDataReaderStream.IndexOf("GPRMC"));
 
                     // Calculate checksum
@@ -185,38 +187,28 @@ namespace WiFiRU
                     }
                     string strChecksum = checksum.ToString("X2");
 
-                    string[] gprmcField = gprmcMessage.Split(',', '*');
+                    string[] gprmcFields = gprmcMessage.Split(',', '*');
 
-                    gpsScanner.LocationStatus = gprmcField[2];
-
-                    if (!(gprmcField[2] == "A"))
+                    if (!(gprmcFields[2] == "A"))
                     {
                         StatusTextBox.Text = "No GPS fix";
                     }
-                    if (!(strChecksum == gprmcField[gprmcField.Length - 1]))
+                    if (!(strChecksum == gprmcFields[gprmcFields.Length - 1]))
                     {
                         StatusTextBox.Text = "Invalid checksum";
                     }
                     else
                     {
-                        gpsScanner.Latitude = ParseLatitude(gprmcField[3] + gprmcField[4]);
-                        gpsScanner.Longitude = ParseLongitude(gprmcField[5] + gprmcField[6]);
-                        gpsScanner.DateTime = ParseDateTime(gprmcField[9], gprmcField[1]);
+                        gpsScanner.RmcMessage = gprmcMessage;
 
-                        StatusTextBox.Text = gprmcField[3] + gprmcField[4] + " " + gprmcField[5] + gprmcField[6] + " " + gprmcField[9] + " " + gprmcField[1];
+                        StatusTextBox.Text = gprmcFields[3] + gprmcFields[4] + " " + gprmcFields[5] + gprmcFields[6] + " " + gprmcFields[9] + " " + gprmcFields[1];
                     }
                 }
             }
         }
 
-        private string ParseDateTime(string date, string time)
-        {
-            return DateTime.ParseExact(date + time, "ddMMyyHHmmss.fff", CultureInfo.InvariantCulture).ToString("u");
-        }
-
         /// <summary>
-        /// CancelReadTask:
-        /// - Uses the ReadCancellationTokenSource to cancel read operations
+        /// CancelReadTask uses the ReadCancellationTokenSource to cancel read operations
         /// </summary>
         private void CancelReadTask()
         {
@@ -233,6 +225,9 @@ namespace WiFiRU
 
         protected void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+        /// <summary>
+        /// ScanButtonClick will be replaced by the SU status message (via Bluetooth door switch)
+        /// </summary>
         private async void ScanButtonClick(object sender, RoutedEventArgs e)
         {
             ButtonScan.IsEnabled = false;
@@ -250,6 +245,10 @@ namespace WiFiRU
             ButtonScan.IsEnabled = true;
         }
 
+        /// <summary>
+        /// RunWifiScan gathers the Wifi data, gets the GPs data and calls the add-to-database method
+        /// </summary>
+        /// <returns></returns>
         private async Task RunWifiScan()
         {
             await wifiScanner.ScanForNetworks();
@@ -261,69 +260,24 @@ namespace WiFiRU
                 {
                     Bssid = availableNetwork.Bssid,
                     NetworkRssiInDecibelMilliwatts = availableNetwork.NetworkRssiInDecibelMilliwatts,
+                    // This is for the GUI only
                     Ssid = availableNetwork.Ssid
                 };
 
-                AddWifiScanResultsToWifiScannerDatabase(wifiSignal, gpsScanner, "venuedata");
+                AddWifiScanResultsToWifiScannerDatabase(wifiSignal, gpsScanner, databaseName, tableName);
             }
         }
 
-        private void AddWifiScanResultsToWifiScannerDatabase(WifiSignal wifiSignal, GpsScanner gpsScanner, string tableName)
+        /// <summary>
+        /// AddWifiScanResultsToWifiScannerDatabase adds the Wifi and GPS data to the SQLite database
+        /// </summary>
+        /// <param name="wifiSignal"></param>
+        /// <param name="gpsScanner"></param>
+        /// <param name="databaseName"></param>
+        /// <param name="tableName"></param>
+        private void AddWifiScanResultsToWifiScannerDatabase(WifiSignal wifiSignal, GpsScanner gpsScanner, string databaseName, string tableName)
         {
-            using (SqliteConnection database = new SqliteConnection("Filename = WiFiScanner.db"))
-            {
-                database.Open();
-
-                //create if table doesn't exist
-                CreateVenueTableInWifiScannerDatabaseIfNotExists(tableName);
-
-                using (SqliteCommand insertCommand = new SqliteCommand())
-                {
-                    insertCommand.Connection = database;
-                    insertCommand.CommandText = "INSERT INTO " + tableName + " " +
-                        "(" +
-                        "Latitude, " +
-                        "Longitude, " +
-                        "Bssid, " +
-                        "NetworkRssiInDecibelMilliwatts, " +
-                        "Ssid, " +
-                        "TimeStamp " +
-                        ") " +
-                        "VALUES " +
-                        "(" +
-                        "@Latitude, " +
-                        "@Longitude, " +
-                        "@Bssid, " +
-                        "@NetworkRssiInDecibelMilliwatts, " +
-                        "@Ssid, " +
-                        "@TimeStamp " +
-                        ")";
-                    insertCommand.Parameters.AddWithValue("@Latitude", gpsScanner.Latitude); //double REAL
-                    insertCommand.Parameters.AddWithValue("@Longitude", gpsScanner.Longitude); //double REAL
-                    insertCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
-                    insertCommand.Parameters.AddWithValue("@NetworkRssiInDecibelMilliwatts", wifiSignal.NetworkRssiInDecibelMilliwatts); //double REAL
-                    insertCommand.Parameters.AddWithValue("@Ssid", wifiSignal.Ssid); //string TEXT
-                    insertCommand.Parameters.AddWithValue("@TimeStamp", gpsScanner.DateTime); //string TEXT
-
-                    try
-                    {
-                        insertCommand.ExecuteNonQuery();
-                    }
-                    catch (SqliteException ex)
-                    {
-                        StatusTextBox.Text = ex.Message;
-                    }
-                }
-                database.Close(); database.Dispose();
-
-                VenueIdTextBox.Text = tableName;
-                OutputTextBlock.ItemsSource = ReadWifiScannerDatabase(tableName);
-            }
-        }
-
-        private void CreateVenueTableInWifiScannerDatabaseIfNotExists(string tableName)
-        {
-            using (SqliteConnection database = new SqliteConnection("Filename = WiFiScanner.db"))
+            using (SqliteConnection database = new SqliteConnection("Filename = " + databaseName))
             {
                 try
                 {
@@ -335,16 +289,11 @@ namespace WiFiRU
                     throw new Exception("SQL database not opened.");
                 }
 
-                String sqlCreateTableCommand = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
-                    "Latitude REAL, " +
-                    "Longitude REAL, " +
-                    "Bssid TEXT, " +
-                    "NetworkRssiInDecibelMilliwatts REAL, " +
-                    "Ssid TEXT, " +
-                    "TimeStamp TEXT " +
-                    ")";
+                // create if table doesn't exist
+                SqliteCommand createTable = new SqliteCommand();
+                createTable.Connection = database;
+                createTable.CommandText = $"CREATE TABLE IF NOT EXISTS {tableName} (Rmc TEXT, Bssid TEXT, NetworkRssiInDecibelMilliwatts REAL, Ssid TEXT)";
 
-                SqliteCommand createTable = new SqliteCommand(sqlCreateTableCommand, database);
                 try
                 {
                     createTable.ExecuteNonQuery();
@@ -354,25 +303,65 @@ namespace WiFiRU
                     StatusTextBox.Text = ex.Message;
                     throw new Exception("SQL table " + tableName + " not created.");
                 }
+
+                database.Close(); database.Dispose();
+            }
+
+            using (SqliteConnection database = new SqliteConnection("Filename = " + databaseName))
+            {
+                try
+                {
+                    database.Open();
+                }
+                catch (SqliteException ex)
+                {
+                    StatusTextBox.Text = ex.Message;
+                    throw new Exception("SQL database not opened.");
+                }
+
+                // insert venue data
+                SqliteCommand insertCommand = new SqliteCommand();
+                insertCommand.Connection = database;
+                insertCommand.CommandText = $"INSERT INTO {tableName} (Rmc, Bssid, NetworkRssiInDecibelMilliwatts, Ssid) VALUES (@Rmc, @Bssid, @NetworkRssiInDecibelMilliwatts, @Ssid)";
+                insertCommand.Parameters.AddWithValue("@Rmc", gpsScanner.RmcMessage); //string TEXT
+                insertCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
+                insertCommand.Parameters.AddWithValue("@NetworkRssiInDecibelMilliwatts", wifiSignal.NetworkRssiInDecibelMilliwatts); //double REAL
+                // This is for the GUI only
+                insertCommand.Parameters.AddWithValue("@Ssid", wifiSignal.Ssid); //string TEXT
+
+                try
+                {
+                    insertCommand.ExecuteNonQuery();
+                }
+                catch (SqliteException ex)
+                {
+                    StatusTextBox.Text = ex.Message;
+                }
                 database.Close(); database.Dispose();
             }
 
             VenueIdTextBox.Text = tableName;
-            OutputTextBlock.ItemsSource = ReadWifiScannerDatabase(tableName);
+            OutputTextBlock.ItemsSource = ReadWifiScannerDatabase(databaseName, tableName);
         }
 
-        private List<String> ReadWifiScannerDatabase(string tableName)
+        /// <summary>
+        /// ReadWifiScannerDatabase reads the data from the database
+        /// </summary>
+        /// <param name="databaseName"></param>
+        /// <param name="tableName"></param>
+        /// <returns></returns>
+        private List<String> ReadWifiScannerDatabase(string databaseName, string tableName)
         {
             List<String> entries = new List<string>();
 
-            using (SqliteConnection database = new SqliteConnection("Filename = WiFiScanner.db"))
+            using (SqliteConnection database = new SqliteConnection("Filename = " + databaseName))
             {
                 database.Open();
 
-                SqliteCommand sqlSelectCommand = new SqliteCommand(
-                    "SELECT Ssid, Bssid, NetworkRssiInDecibelMilliwatts, TimeStamp, Latitude, Longitude " +
-                    "FROM " + tableName + " " +
-                    "ORDER BY NetworkRssiInDecibelMilliwatts DESC", database);
+                SqliteCommand sqlSelectCommand = new SqliteCommand();
+                sqlSelectCommand.Connection = database;
+                sqlSelectCommand.CommandText = $"SELECT Rmc, Bssid, NetworkRssiInDecibelMilliwatts, Ssid FROM {tableName} ORDER BY NetworkRssiInDecibelMilliwatts DESC";
+
                 SqliteDataReader query;
 
                 try
@@ -387,149 +376,15 @@ namespace WiFiRU
 
                 while (query.Read())
                 {
-                    entries.Add("[MAC " + query.GetString(1) + "] "
-                        + "[RSSI " + query.GetString(2) + " dBm] "
-                        + query.GetString(3) + " "
-                        + query.GetString(0) + " "
-                        + query.GetDouble(4) + " "
-                        + query.GetDouble(5));
+                    entries.Add("[MAC " + query.GetString(1) + "] " +
+                        "[RSSI " + query.GetString(2) + " dBm] " +
+                        query.GetString(3) + " " +
+                        query.GetString(0));
                 }
 
                 database.Close(); database.Dispose();
             }
             return entries;
-        }
-
-        private double ParseLatitude(string coords)
-        {
-            // Latitude: DDMM.mmmm - e.g. 5321.5802 N
-            if (!coords.EndsWith("N", StringComparison.OrdinalIgnoreCase) && !coords.EndsWith("S", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("Latitude coordinate not found.");
-            }
-
-            if (coords.Length < 4)
-            {
-                throw new ArgumentException("Invalid latitude format.");
-            }
-
-            int dd = 0;
-            try
-            {
-                dd = int.Parse(coords.Substring(0, 2));
-                if (dd > 90)
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
-            }
-            catch when (dd > 90)
-            {
-                throw new ArgumentOutOfRangeException("Degrees in latitude cannot exceed 90.");
-            }
-            catch
-            {
-                throw new ArgumentException("Invalid degrees format in latitude.");
-            }
-
-            double mm = 0.0D;
-            try
-            {
-                string minutes = Regex.Match(coords.Substring(2), @"(\d+).(\d+)").Value;
-                mm = double.Parse(minutes);
-                if ((dd == 90 && mm > 0.0D) || mm >= 60.0D)
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
-            }
-            catch when (dd == 90 && mm > 0.0D)
-            {
-                throw new ArgumentOutOfRangeException("Degrees in latitude cannot exceed 90.");
-            }
-            catch when (mm >= 60.0D)
-            {
-                throw new ArgumentOutOfRangeException("Minutes in latitude cannot exceed 60.");
-            }
-            catch
-            {
-                throw new ArgumentException("Invalid minutes format in latitude.");
-            }
-
-            double latitude = (dd + mm / 60);
-
-            if (coords.EndsWith("N", StringComparison.OrdinalIgnoreCase))
-            {
-                return latitude;
-            }
-            else
-            {
-                return -latitude;
-            }
-        }
-
-        private double ParseLongitude(string coords)
-        {
-            // Longitude: DDDMM.mmmm - e.g. 00630.3372 W
-            if (!coords.EndsWith("W", StringComparison.OrdinalIgnoreCase) && !coords.EndsWith("E", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("Longitude coordinate not found.");
-            }
-
-            if (coords.Length < 5)
-            {
-                throw new ArgumentException("Invalid longitude format.");
-            }
-
-            int ddd = 0;
-            try
-            {
-                ddd = int.Parse(coords.Substring(0, 3));
-                if (ddd > 180)
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
-            }
-            catch when (ddd > 180)
-            {
-                throw new ArgumentOutOfRangeException("Degrees in longitude cannot exceed 180.");
-            }
-            catch
-            {
-                throw new ArgumentException("Invalid degrees format in longitude.");
-            }
-
-            double mm = 0.0D;
-            try
-            {
-                string minutes = Regex.Match(coords.Substring(3), @"(\d+).(\d+)").Value;
-                mm = double.Parse(minutes);
-                if ((ddd == 180 && mm > 0.0D) || mm >= 60.0D)
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
-            }
-            catch when (ddd == 180 && mm > 0.0D)
-            {
-                throw new ArgumentOutOfRangeException("Degrees in longitude cannot exceed 180.");
-            }
-            catch when (mm >= 60.0D)
-            {
-                throw new ArgumentOutOfRangeException("Minutes in longitude should be less than 60.");
-            }
-            catch
-            {
-                throw new ArgumentException("Invalid minutes format in longitude.");
-            }
-
-            double longitude = (ddd + mm / 60);
-
-            if (coords.EndsWith("E", StringComparison.OrdinalIgnoreCase))
-            {
-                return longitude;
-            }
-            else
-            {
-                return -longitude;
-            }
         }
     }
 }
