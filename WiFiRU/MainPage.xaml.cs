@@ -54,6 +54,83 @@ namespace WiFiRU
             await wifiScanner.InitializeScanner();
         }
 
+        private async Task SendDeviceToCloudMessageAsync()
+        {
+            List<String> entries = new List<string>();
+
+            using (SqliteConnection database = new SqliteConnection("Filename = " + databaseName))
+            {
+                // Open the database and get the entries
+                database.Open();
+
+                SqliteCommand sqlSelectCommand = new SqliteCommand
+                {
+                    Connection = database,
+                    CommandText = $"SELECT Rmc, Bssid, NetworkRssiInDecibelMilliwatts, Ssid FROM {tableName} ORDER BY NetworkRssiInDecibelMilliwatts DESC"
+                };
+
+                SqliteDataReader query;
+
+                try
+                {
+                    query = sqlSelectCommand.ExecuteReader();
+                }
+                catch (SqliteException ex)
+                {
+                    StatusTextBox.Text = ex.Message;
+                    throw new Exception("SQL database no entries in table." + tableName);
+                }
+
+                while (query.Read())
+                {
+                    entries.Add("[MAC " + query.GetString(1) + "] " +
+                        "[RSSI " + query.GetString(2) + " dBm] " +
+                        query.GetString(3) + " " +
+                        query.GetString(0));
+                }
+
+                database.Close(); database.Dispose();
+
+                // Send to Azure
+                foreach (var entry in entries)
+                {
+                    await AzureIoTHub.SendDeviceToCloudMessageAsync(entry);
+                }
+            }
+
+            // Delete all rows in the database
+            using (SqliteConnection database = new SqliteConnection("Filename = " + databaseName))
+            {
+                try
+                {
+                    database.Open();
+                }
+                catch (SqliteException ex)
+                {
+                    StatusTextBox.Text = ex.Message;
+                    throw new Exception("SQL database not opened.");
+                }
+
+                SqliteCommand deleteAllRows = new SqliteCommand
+                {
+                    Connection = database,
+                    CommandText = $"DELETE FROM {tableName}"
+                };
+
+                try
+                {
+                    deleteAllRows.ExecuteNonQuery();
+                }
+                catch (SqliteException ex)
+                {
+                    StatusTextBox.Text = ex.Message;
+                    throw new Exception("SQL table " + tableName + " rows not deleted.");
+                }
+
+                database.Close(); database.Dispose();
+            }
+        }
+
         /// <summary>
         /// SelectDefaultPort
         /// - Use SerialDevice.GetDeviceSelector to enumerate all serial devices
@@ -260,9 +337,15 @@ namespace WiFiRU
                 {
                     Bssid = availableNetwork.Bssid,
                     NetworkRssiInDecibelMilliwatts = availableNetwork.NetworkRssiInDecibelMilliwatts,
-                    // This is for the GUI only
+                    // This is for the GUI and check for home network
                     Ssid = availableNetwork.Ssid
                 };
+
+                // check if home network available
+                if (availableNetwork.Ssid == "Telstra3BB67C")
+                {
+                    await SendDeviceToCloudMessageAsync();
+                }
 
                 AddWifiScanResultsToWifiScannerDatabase(wifiSignal, gpsScanner, databaseName, tableName);
             }
@@ -290,9 +373,11 @@ namespace WiFiRU
                 }
 
                 // create if table doesn't exist
-                SqliteCommand createTable = new SqliteCommand();
-                createTable.Connection = database;
-                createTable.CommandText = $"CREATE TABLE IF NOT EXISTS {tableName} (Rmc TEXT, Bssid TEXT, NetworkRssiInDecibelMilliwatts REAL, Ssid TEXT)";
+                SqliteCommand createTable = new SqliteCommand
+                {
+                    Connection = database,
+                    CommandText = $"CREATE TABLE IF NOT EXISTS {tableName} (Rmc TEXT, Bssid TEXT, NetworkRssiInDecibelMilliwatts REAL, Ssid TEXT)"
+                };
 
                 try
                 {
@@ -320,9 +405,11 @@ namespace WiFiRU
                 }
 
                 // insert venue data
-                SqliteCommand insertCommand = new SqliteCommand();
-                insertCommand.Connection = database;
-                insertCommand.CommandText = $"INSERT INTO {tableName} (Rmc, Bssid, NetworkRssiInDecibelMilliwatts, Ssid) VALUES (@Rmc, @Bssid, @NetworkRssiInDecibelMilliwatts, @Ssid)";
+                SqliteCommand insertCommand = new SqliteCommand
+                {
+                    Connection = database,
+                    CommandText = $"INSERT INTO {tableName} (Rmc, Bssid, NetworkRssiInDecibelMilliwatts, Ssid) VALUES (@Rmc, @Bssid, @NetworkRssiInDecibelMilliwatts, @Ssid)"
+                };
                 insertCommand.Parameters.AddWithValue("@Rmc", gpsScanner.RmcMessage); //string TEXT
                 insertCommand.Parameters.AddWithValue("@Bssid", wifiSignal.Bssid); //string TEXT
                 insertCommand.Parameters.AddWithValue("@NetworkRssiInDecibelMilliwatts", wifiSignal.NetworkRssiInDecibelMilliwatts); //double REAL
@@ -358,9 +445,11 @@ namespace WiFiRU
             {
                 database.Open();
 
-                SqliteCommand sqlSelectCommand = new SqliteCommand();
-                sqlSelectCommand.Connection = database;
-                sqlSelectCommand.CommandText = $"SELECT Rmc, Bssid, NetworkRssiInDecibelMilliwatts, Ssid FROM {tableName} ORDER BY NetworkRssiInDecibelMilliwatts DESC";
+                SqliteCommand sqlSelectCommand = new SqliteCommand
+                {
+                    Connection = database,
+                    CommandText = $"SELECT Rmc, Bssid, NetworkRssiInDecibelMilliwatts, Ssid FROM {tableName} ORDER BY NetworkRssiInDecibelMilliwatts DESC"
+                };
 
                 SqliteDataReader query;
 
